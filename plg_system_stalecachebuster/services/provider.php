@@ -5,7 +5,7 @@
  * @subpackage  System.StaleCacheBuster
  *
  * @copyright   Copyright (C) 2026 Cybersalt. All rights reserved.
- * @license     GNU General Public License version 2 or later
+ * @license     GNU General Public License version 3
  */
 
 \defined('_JEXEC') or die;

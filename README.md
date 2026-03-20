@@ -50,7 +50,7 @@ cd plg_system_stalecachebuster
 
 ## License
 
-GNU General Public License version 2 or later
+This project is released under the GNU General Public License version 3 (GPLv3).
 
 ## Author
 
