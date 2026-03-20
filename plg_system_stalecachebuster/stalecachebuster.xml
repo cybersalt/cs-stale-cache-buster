@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>plg_system_stalecachebuster</name>
+    <author>Cybersalt</author>
+    <creationDate>2026-03-20</creationDate>
+    <copyright>Copyright (C) 2026 Cybersalt. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>support@cybersalt.com</authorEmail>
+    <authorUrl>https://cybersalt.com</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_STALECACHEBUSTER_DESCRIPTION</description>
+    <namespace path="src">Cybersalt\Plugin\System\StaleCacheBuster</namespace>
+
+    <files>
+        <folder plugin="stalecachebuster">services</folder>
+        <folder>src</folder>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_system_stalecachebuster.ini</language>
+        <language tag="en-GB">en-GB/plg_system_stalecachebuster.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field
+                    name="bust_css"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_BUST_CSS_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_BUST_CSS_DESC"
+                    default="1"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+                <field
+                    name="bust_js"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_BUST_JS_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_BUST_JS_DESC"
+                    default="1"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+                <field
+                    name="skip_existing"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_SKIP_EXISTING_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_SKIP_EXISTING_DESC"
+                    default="1"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+            </fieldset>
+        </fields>
+    </config>
+
+    <scriptfile>script.php</scriptfile>
+</extension>
