@@ -1,0 +1,57 @@
+<div class="changelog-container">
+    <h1>CS Stale Cache Buster - Changelog</h1>
+
+    <div class="intro">
+        <p><strong>All notable changes to CS Stale Cache Buster will be documented here.</strong></p>
+    </div>
+
+    <h2>
+        <span class="version-badge">v1.2.0</span>
+        <span class="date">2026-03-26</span>
+    </h2>
+
+    <h3><span class="section-icon">🚀</span> New Features</h3>
+    <ul>
+        <li><strong>Exclude Paths</strong>: Textarea to list path fragments that should be skipped (one per line). Useful for excluding specific extensions like JCE or MaxiMenu CK.</li>
+        <li><strong>Prevent Admin Caching</strong>: Toggle to send no-cache headers on all administrator pages, preventing CDNs like Cloudflare from caching the backend.</li>
+        <li><strong>Debug Mode</strong>: Adds an HTML comment before <code>&lt;/body&gt;</code> listing every URL that was modified. View page source to see the log.</li>
+        <li><strong>Logging with Viewer</strong>: Full file-based logging of URL modifications with a dark-themed AJAX log viewer, download, and clear functionality.</li>
+    </ul>
+
+    <h3><span class="section-icon">🔧</span> Improvements</h3>
+    <ul>
+        <li><strong>Same-domain URL handling</strong>: Full URLs pointing to the same domain are now recognized as local and processed correctly.</li>
+        <li><strong>HTML-only processing</strong>: Plugin now skips non-HTML responses (JSON, feeds, etc.) to avoid interfering with API calls.</li>
+    </ul>
+
+    <h2>
+        <span class="version-badge">v1.1.0</span>
+        <span class="date">2026-03-25</span>
+    </h2>
+
+    <h3><span class="section-icon">🔧</span> Improvements</h3>
+    <ul>
+        <li><strong>GPLv3 license</strong>: Updated all files from GPLv2+ to GPLv3.</li>
+        <li><strong>Plugin name</strong>: Changed from "System - Jexter Stale Cache Buster" to "System - CS Stale Cache Buster".</li>
+        <li><strong>Post-install link</strong>: Filter search now uses friendly name instead of technical plugin name.</li>
+    </ul>
+
+    <h2>
+        <span class="version-badge">v1.0.0</span>
+        <span class="date">2026-03-20</span>
+    </h2>
+
+    <h3><span class="section-icon">🚀</span> New Features</h3>
+    <ul>
+        <li><strong>Initial release</strong>: Automatically appends file-modification timestamps to CSS and JavaScript URLs.</li>
+        <li><strong>Cache-bust CSS Files</strong>: Toggle to add timestamps to stylesheet URLs.</li>
+        <li><strong>Cache-bust JavaScript Files</strong>: Toggle to add timestamps to script URLs.</li>
+        <li><strong>Skip Existing Parameters</strong>: Option to leave URLs that already have query strings unchanged.</li>
+        <li><strong>Local files only</strong>: Skips external URLs and data: URIs.</li>
+        <li><strong>Security</strong>: Validates resolved file paths are within JPATH_ROOT.</li>
+    </ul>
+
+    <div class="footer">
+        <p>&copy; 2026 Cybersalt</p>
+    </div>
+</div>
