@@ -10,8 +10,13 @@ Some Joomla extensions (like Template Creator CK, Maximenu CK, and others) outpu
 
 - Adds `?v=` timestamp parameter to local CSS and JavaScript URLs
 - Only targets local files (skips external URLs and data: URIs)
+- Recognizes same-domain full URLs as local files
 - Option to skip URLs that already have query string parameters
 - Separately enable/disable for CSS and JavaScript
+- Exclude paths list to skip specific extensions or directories
+- Prevent Admin Caching option to send no-cache headers on admin pages (useful with CDNs like Cloudflare)
+- Debug mode to see which URLs were modified (HTML comment in page source)
+- Full logging with log viewer, download, and clear functionality
 - Uses `onAfterRender` system event for guaranteed processing of final HTML output
 - Zero configuration needed for most sites - just install and enable
 
@@ -31,9 +36,19 @@ Some Joomla extensions (like Template Creator CK, Maximenu CK, and others) outpu
 
 ## Configuration
 
+### Basic Settings
+
 - **Cache-bust CSS Files**: Add file-modification timestamps to CSS file URLs (default: Yes)
 - **Cache-bust JavaScript Files**: Add file-modification timestamps to JavaScript file URLs (default: Yes)
 - **Skip URLs with Existing Parameters**: Leave URLs that already have a query string unchanged (default: Yes)
+- **Exclude Paths**: One path fragment per line. Any URL containing a listed path will be skipped (e.g., `media/com_jce` to skip all JCE editor files)
+- **Prevent Admin Caching**: Send no-cache headers on all administrator pages, preventing CDNs from caching the backend (default: No)
+- **Debug Mode**: Adds an HTML comment before `</body>` listing every URL that was modified. View page source to see the log. (default: No)
+
+### Logging Tab
+
+- **Enable Logging**: Log every URL modification to a file for diagnostics (default: No)
+- **Log Viewer**: Buttons to view, download, or clear the log. The viewer opens in a new window with a dark-themed interface showing each page request and the URLs that were modified.
 
 ## How It Works
 
@@ -45,7 +60,7 @@ Use 7-Zip to create the installation package (never use PowerShell's `Compress-A
 
 ```powershell
 cd plg_system_stalecachebuster
-& 'C:\Program Files\7-Zip\7z.exe' a -tzip '../plg_system_stalecachebuster_v1.0.0.zip' *
+& 'C:\Program Files\7-Zip\7z.exe' a -tzip '../plg_system_stalecachebuster_v1.2.0.zip' *
 ```
 
 ## License

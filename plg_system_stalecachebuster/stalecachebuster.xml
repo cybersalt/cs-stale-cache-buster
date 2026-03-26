@@ -7,13 +7,14 @@
     <license>GNU General Public License version 3</license>
     <authorEmail>support@cybersalt.com</authorEmail>
     <authorUrl>https://cybersalt.com</authorUrl>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
     <description>PLG_SYSTEM_STALECACHEBUSTER_DESCRIPTION</description>
     <namespace path="src">Cybersalt\Plugin\System\StaleCacheBuster</namespace>
 
     <files>
         <folder plugin="stalecachebuster">services</folder>
         <folder>src</folder>
+        <folder>tmpl</folder>
     </files>
 
     <languages folder="language">
@@ -57,6 +58,56 @@
                     <option value="1">JYES</option>
                     <option value="0">JNO</option>
                 </field>
+                <field
+                    name="exclude_paths"
+                    type="textarea"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_EXCLUDE_PATHS_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_EXCLUDE_PATHS_DESC"
+                    rows="6"
+                    cols="60"
+                    filter="raw"
+                />
+                <field
+                    name="no_cache_admin"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_NO_CACHE_ADMIN_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_NO_CACHE_ADMIN_DESC"
+                    default="0"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+                <field
+                    name="debug_mode"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_DEBUG_MODE_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_DEBUG_MODE_DESC"
+                    default="0"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+            </fieldset>
+            <fieldset name="logging" label="PLG_SYSTEM_STALECACHEBUSTER_LOGGING_FIELDSET">
+                <field
+                    name="enable_logging"
+                    type="radio"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_ENABLE_LOGGING_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_ENABLE_LOGGING_DESC"
+                    default="0"
+                    class="btn-group btn-group-yesno"
+                >
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+                <field
+                    name="log_viewer"
+                    type="Cybersalt\Plugin\System\StaleCacheBuster\Field\ViewerbuttonField"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_LOG_VIEWER_LABEL"
+                    description=""
+                />
             </fieldset>
         </fields>
     </config>
