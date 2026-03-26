@@ -32,7 +32,8 @@ class PlgSystemStalecachebusterInstallerScript
         $extensionId = $this->getPluginId();
 
         if ($extensionId) {
-            $url = 'index.php?option=com_plugins&view=plugin&layout=edit&extension_id=' . $extensionId;
+            $token = \Joomla\CMS\Session\Session::getFormToken();
+            $url = 'index.php?option=com_plugins&view=plugin&layout=edit&extension_id=' . $extensionId . '&' . $token . '=1';
         } else {
             $url = 'index.php?option=com_plugins&view=plugins&filter[search]=stale cache buster';
         }
