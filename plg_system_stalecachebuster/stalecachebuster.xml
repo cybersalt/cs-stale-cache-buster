@@ -141,4 +141,8 @@
     </config>
 
     <scriptfile>script.php</scriptfile>
+
+    <updateservers>
+        <server type="extension" priority="1" name="CS Stale Cache Buster Updates">https://raw.githubusercontent.com/cybersalt/cs-stale-cache-buster/main/updates.xml</server>
+    </updateservers>
 </extension>
