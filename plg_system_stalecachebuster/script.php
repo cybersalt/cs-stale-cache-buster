@@ -10,6 +10,7 @@
 
 \defined('_JEXEC') or die;
 
+use Joomla\CMS\Factory;
 use Joomla\CMS\Installer\InstallerAdapter;
 use Joomla\CMS\Language\Text;
 
@@ -28,7 +29,13 @@ class PlgSystemStalecachebusterInstallerScript
             ? 'PLG_SYSTEM_STALECACHEBUSTER_POSTINSTALL_UPDATED'
             : 'PLG_SYSTEM_STALECACHEBUSTER_POSTINSTALL_INSTALLED';
 
-        $url = 'index.php?option=com_plugins&view=plugins&filter[search]=stale cache buster';
+        $extensionId = $this->getPluginId();
+
+        if ($extensionId) {
+            $url = 'index.php?option=com_plugins&view=plugin&layout=edit&extension_id=' . $extensionId;
+        } else {
+            $url = 'index.php?option=com_plugins&view=plugins&filter[search]=stale cache buster';
+        }
 
         echo '<div class="card mb-3" style="margin: 20px 0;">'
             . '<div class="card-body">'
@@ -37,5 +44,21 @@ class PlgSystemStalecachebusterInstallerScript
             . '<a href="' . $url . '" class="btn btn-primary text-white">'
             . Text::_('PLG_SYSTEM_STALECACHEBUSTER_POSTINSTALL_OPEN')
             . '</a></div></div>';
+    }
+
+    private function getPluginId(): ?int
+    {
+        $db = Factory::getDbo();
+        $query = $db->getQuery(true)
+            ->select($db->quoteName('extension_id'))
+            ->from($db->quoteName('#__extensions'))
+            ->where($db->quoteName('element') . ' = ' . $db->quote('stalecachebuster'))
+            ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
+            ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'));
+
+        $db->setQuery($query);
+        $result = $db->loadResult();
+
+        return $result ? (int) $result : null;
     }
 }
