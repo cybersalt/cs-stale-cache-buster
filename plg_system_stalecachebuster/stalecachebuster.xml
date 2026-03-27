@@ -52,7 +52,7 @@
 
     <config>
         <fields name="params">
-            <fieldset name="basic">
+            <fieldset name="basic" addfieldprefix="Cybersalt\Plugin\System\StaleCacheBuster\Field">
                 <field
                     name="no_cache_admin"
                     type="radio"
@@ -77,12 +77,12 @@
                 </field>
                 <field
                     name="scan_templates"
-                    type="Cybersalt\Plugin\System\StaleCacheBuster\Field\TemplatescanbuttonField"
+                    type="Templatescanbutton"
                     label="PLG_SYSTEM_STALECACHEBUSTER_SCAN_TEMPLATES_LABEL"
                     description=""
                 />
             </fieldset>
-            <fieldset name="logging" label="PLG_SYSTEM_STALECACHEBUSTER_LOGGING_FIELDSET">
+            <fieldset name="logging" label="PLG_SYSTEM_STALECACHEBUSTER_LOGGING_FIELDSET" addfieldprefix="Cybersalt\Plugin\System\StaleCacheBuster\Field">
                 <field
                     name="enable_logging"
                     type="radio"
@@ -96,7 +96,7 @@
                 </field>
                 <field
                     name="log_viewer"
-                    type="Cybersalt\Plugin\System\StaleCacheBuster\Field\ViewerbuttonField"
+                    type="Viewerbutton"
                     label="PLG_SYSTEM_STALECACHEBUSTER_LOG_VIEWER_LABEL"
                     description=""
                 />
