@@ -6,6 +6,27 @@
     </div>
 
     <h2>
+        <span class="version-badge">v2.0.0</span>
+        <span class="date">2026-03-26</span>
+    </h2>
+
+    <h3><span class="section-icon">🛡️</span> Breaking Changes</h3>
+    <ul>
+        <li><strong>Template CSS only</strong>: Plugin now exclusively targets CSS files from the active site template. No longer modifies JavaScript or third-party extension CSS/JS URLs. This prevents conflicts with Cloudflare and other CDNs.</li>
+        <li><strong>Removed settings</strong>: Cache-bust CSS toggle, Cache-bust JS toggle, Skip Existing Parameters, and Exclude Paths have been removed (no longer needed).</li>
+    </ul>
+
+    <h3><span class="section-icon">🚀</span> New Features</h3>
+    <ul>
+        <li><strong>Template CSS scanner</strong>: Admin button scans installed templates and shows all their CSS files with modification dates and current version hashes.</li>
+    </ul>
+
+    <h3><span class="section-icon">🔧</span> Improvements</h3>
+    <ul>
+        <li><strong>CDN safe</strong>: Only touches template stylesheets, leaving all other assets untouched for Cloudflare/CDN compatibility.</li>
+    </ul>
+
+    <h2>
         <span class="version-badge">v1.3.0</span>
         <span class="date">2026-03-26</span>
     </h2>

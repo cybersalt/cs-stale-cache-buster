@@ -5,6 +5,18 @@ All notable changes to CS Stale Cache Buster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-03-26
+
+### 🛡️ Breaking Changes
+- **Template CSS only**: Plugin now exclusively targets CSS files from the active site template. No longer modifies JavaScript or third-party extension CSS/JS URLs. This prevents conflicts with Cloudflare and other CDNs.
+- **Removed settings**: Cache-bust CSS toggle, Cache-bust JS toggle, Skip Existing Parameters, and Exclude Paths have been removed (no longer needed with the focused approach).
+
+### 🚀 New Features
+- **Template CSS scanner**: Admin button scans installed templates and shows all their CSS files with modification dates and current version hashes.
+
+### 🔧 Improvements
+- **CDN safe**: Only touches template stylesheets, leaving all other assets untouched for Cloudflare/CDN compatibility.
+
 ## [1.3.0] - 2026-03-26
 
 ### 🌐 Multilingual
