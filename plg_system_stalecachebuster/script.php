@@ -105,6 +105,8 @@ return new class () implements InstallerScriptInterface {
             'stalecachebuster.log'     => $dir . '/stalecachebuster.log.php',
         ];
 
+        $canWrite = (is_dir($dir) || @mkdir($dir, 0755, true)) && is_writable($dir);
+
         foreach ([JPATH_ROOT . '/logs', $dir] as $legacyDir) {
             foreach ($targets as $legacyName => $target) {
                 $legacy = $legacyDir . '/' . $legacyName;
@@ -113,31 +115,55 @@ return new class () implements InstallerScriptInterface {
                     continue;
                 }
 
-                if ((!is_dir($dir) && !@mkdir($dir, 0755, true)) || !is_writable($dir)) {
-                    return;
-                }
-
-                // Re-encode every entry so nothing but escaped JSON reaches a
-                // .php file; anything that isn't a log entry is dropped.
-                $lines = '';
-                $file  = new \SplFileObject($legacy, 'r');
-
-                foreach ($file as $line) {
-                    $entry = json_decode(trim((string) $line), true);
-
-                    if (\is_array($entry)) {
-                        $lines .= json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG) . "\n";
+                try {
+                    if ($canWrite) {
+                        $this->appendLegacyLog($legacy, $target, $guard);
                     }
+                } catch (\Throwable $e) {
+                    // Move what we can; one bad file must not stop the rest.
                 }
 
-                $file = null;
-                $head = is_file($target) && filesize($target) > 0 ? '' : $guard;
-
-                if (@file_put_contents($target, $head . $lines, FILE_APPEND | LOCK_EX) !== false) {
-                    @unlink($legacy);
-                }
+                // Delete the old plain-text file even if it couldn't be moved:
+                // the web server would keep handing it out.
+                @unlink($legacy);
             }
         }
+    }
+
+    /**
+     * Append the newest 4 MB of an old log to the protected log, one entry
+     * at a time. Every entry is re-encoded so nothing but escaped JSON
+     * reaches a .php file; anything that isn't a log entry is dropped.
+     */
+    private function appendLegacyLog(string $legacy, string $target, string $guard): void
+    {
+        $in  = new \SplFileObject($legacy, 'r');
+        $out = @fopen($target, 'c+');
+
+        if ($out === false || !flock($out, LOCK_EX)) {
+            return;
+        }
+
+        $size = (int) (fstat($out)['size'] ?? 0);
+        fseek($out, 0, SEEK_END);
+
+        if ($size === 0) {
+            fwrite($out, $guard);
+        }
+
+        $in->fseek(max(0, (int) filesize($legacy) - 4 * 1024 * 1024));
+
+        foreach ($in as $line) {
+            $entry = json_decode(trim((string) $line), true);
+
+            if (\is_array($entry)) {
+                fwrite($out, json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG) . "\n");
+            }
+        }
+
+        fflush($out);
+        flock($out, LOCK_UN);
+        fclose($out);
     }
 
     /**

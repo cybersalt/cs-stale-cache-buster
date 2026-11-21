@@ -512,21 +512,6 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        clearstatcache(true, $logFile);
-
-        if (is_file($logFile) && filesize($logFile) > self::LOG_MAX_BYTES) {
-            $backup = $this->getLogFile(true);
-            @unlink($backup);
-
-            // Locked or not allowed to rename: start again rather than let
-            // the file grow without end.
-            if (!@rename($logFile, $backup)) {
-                @file_put_contents($logFile, '', LOCK_EX);
-            }
-
-            clearstatcache(true, $logFile);
-        }
-
         $clip  = static fn ($url): string => substr((string) $url, 0, self::LOG_MAX_URL);
         $entry = [
             'timestamp'     => date('Y-m-d H:i:s'),
@@ -543,13 +528,43 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
         // JSON_HEX_TAG: the file ends in .php, so no "<?php" may ever reach it
         // from a visitor's URL, even if the die() line were missing.
         $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG) . "\n";
-        $isNew   = !is_file($logFile) || filesize($logFile) === 0;
 
-        if ($isNew ? !is_writable($logDir) : !is_writable($logFile)) {
+        // Rotation, the die() line and the append all happen under one lock,
+        // so two requests can never leave a file that starts without it.
+        $handle = @fopen($logFile, 'c+');
+
+        if ($handle === false) {
             return;
         }
 
-        @file_put_contents($logFile, ($isNew ? self::LOG_GUARD : '') . $logLine, FILE_APPEND | LOCK_EX);
+        if (!flock($handle, LOCK_EX)) {
+            fclose($handle);
+
+            return;
+        }
+
+        $size = (int) (fstat($handle)['size'] ?? 0);
+
+        if ($size > self::LOG_MAX_BYTES) {
+            // Keep the previous log as the .old file (it starts with the
+            // die() line too), then start this one again.
+            $backup = @fopen($this->getLogFile(true), 'wb');
+
+            if ($backup !== false) {
+                rewind($handle);
+                stream_copy_to_stream($handle, $backup);
+                fclose($backup);
+            }
+
+            ftruncate($handle, 0);
+            $size = 0;
+        }
+
+        fseek($handle, 0, SEEK_END);
+        fwrite($handle, ($size === 0 ? self::LOG_GUARD : '') . $logLine);
+        fflush($handle);
+        flock($handle, LOCK_UN);
+        fclose($handle);
     }
 
     /**
