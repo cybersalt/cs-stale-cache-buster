@@ -1,0 +1,23 @@
+<!--
+  cs-stale-cache-buster logo
+  Cybersalt duotone: cobalt #0102E1 refresh arrows, orange #FE9904 version tag.
+  Tabler Icons "refresh" paths (MIT licensed), with a small orange dot for the ?v= version tag.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="256"
+  height="256"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <g stroke="#0102E1">
+    <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+    <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+  </g>
+  <g stroke="#FE9904">
+    <path d="M12 12l0 .01" />
+  </g>
+</svg>

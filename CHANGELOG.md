@@ -5,6 +5,30 @@ All notable changes to CS Stale Cache Buster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+- **Joomla 6 front end error**: The plugin no longer breaks the site on Joomla 6 when the Backward Compatibility plugin is switched off. It does not use any removed Joomla file classes any more (GitHub issue #2).
+- **Language placeholders**: Texts such as the plugin name, description and install message are now loaded properly during an install or update, and the language files are also kept inside the plugin folder, so no raw language keys show up. The translations were refreshed to match the current settings (GitHub issue #1).
+- **Windows servers**: Template CSS files are now found correctly on Windows hosts, so they get their version tag there too.
+- **Update notices on Joomla 6**: The update feed now matches Joomla 5 and Joomla 6 sites (it only matched Joomla 5 before).
+
+### 🚀 New Features
+- **Log Viewer rebuilt**: It now opens inside the normal admin template and works in light and dark mode. It has clickable statistics cards, a time range, a CSS file and a search filter, paging, a plain-text dump, a CSV download, delete selected entries, and a Clear All button that asks for confirmation in a dialog instead of a browser pop-up.
+- **Support tab**: Support email, support link and support name can be changed in the plugin settings. They are used in error messages and in the install card.
+- **Install card**: After installing or updating, a card with next steps, a link to the plugin settings and the support details is shown.
+- **Changelog button**: A `changelog.xml` file and a `changelogurl` in the manifest, so Joomla can show the change notes.
+
+### 🌐 Multilingual
+- **17 languages**: Added Norwegian Bokmal and Norwegian Nynorsk, and updated all other translations.
+
+### 🔍 Security
+- **Log tools need the right permissions**: Viewing the log needs permission to manage plugins. Clearing or deleting log entries also needs permission to edit plugins, a POST request and a valid security token.
+- **Log file location**: The log is now kept in Joomla's log folder instead of a `logs` folder in the site root. An existing log is moved over automatically.
+
+### 🔧 Improvements
+- **Settings page**: The Scan Templates and Clear Log buttons no longer use browser pop-ups, and file names from the scan are escaped.
+
 ## [2.0.1] - 2026-03-26
 
 ### 🐛 Bug Fixes

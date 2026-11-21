@@ -11,11 +11,19 @@
     <description>PLG_SYSTEM_STALECACHEBUSTER_DESCRIPTION</description>
     <namespace path="src">Cybersalt\Plugin\System\StaleCacheBuster</namespace>
 
+    <changelogurl>https://raw.githubusercontent.com/cybersalt/cs-stale-cache-buster/main/changelog.xml</changelogurl>
+
     <files>
+        <filename>script.php</filename>
         <folder plugin="stalecachebuster">services</folder>
         <folder>src</folder>
         <folder>tmpl</folder>
+        <folder>language</folder>
     </files>
+
+    <media folder="media" destination="plg_system_stalecachebuster">
+        <filename>logo.svg</filename>
+    </media>
 
     <languages folder="language">
         <language tag="en-GB">en-GB/plg_system_stalecachebuster.ini</language>
@@ -48,6 +56,10 @@
         <language tag="tr-TR">tr-TR/plg_system_stalecachebuster.sys.ini</language>
         <language tag="zh-CN">zh-CN/plg_system_stalecachebuster.ini</language>
         <language tag="zh-CN">zh-CN/plg_system_stalecachebuster.sys.ini</language>
+        <language tag="nb-NO">nb-NO/plg_system_stalecachebuster.ini</language>
+        <language tag="nb-NO">nb-NO/plg_system_stalecachebuster.sys.ini</language>
+        <language tag="nn-NO">nn-NO/plg_system_stalecachebuster.ini</language>
+        <language tag="nn-NO">nn-NO/plg_system_stalecachebuster.sys.ini</language>
     </languages>
 
     <config>
@@ -99,6 +111,35 @@
                     type="Viewerbutton"
                     label="PLG_SYSTEM_STALECACHEBUSTER_LOG_VIEWER_LABEL"
                     description=""
+                />
+            </fieldset>
+            <fieldset
+                name="support"
+                label="PLG_SYSTEM_STALECACHEBUSTER_SUPPORT_FIELDSET"
+                description="PLG_SYSTEM_STALECACHEBUSTER_SUPPORT_FIELDSET_DESC"
+            >
+                <field
+                    name="support_email"
+                    type="email"
+                    default="support@cybersalt.com"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_EMAIL_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_EMAIL_DESC"
+                    filter="string"
+                />
+                <field
+                    name="support_url"
+                    type="url"
+                    default="https://www.cybersalt.com/services/support-request-form"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_URL_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_URL_DESC"
+                    filter="url"
+                />
+                <field
+                    name="support_label"
+                    type="text"
+                    default="Cybersalt support"
+                    label="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_LABEL_LABEL"
+                    description="PLG_SYSTEM_STALECACHEBUSTER_FIELD_SUPPORT_LABEL_DESC"
                 />
             </fieldset>
         </fields>

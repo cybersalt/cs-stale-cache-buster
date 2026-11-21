@@ -10,346 +10,294 @@
 
 \defined('_JEXEC') or die;
 
+use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
 
 /**
- * Variables available:
- * @var string $token        CSRF token
- * @var string $ajaxUrl      Base AJAX URL
- * @var string $lang         Language tag
- * @var string $logFilePath  Full path to the log file
+ * Log viewer, rendered inside the Atum administrator template (so it follows
+ * Atum's light and dark colours). Everything is plain Bootstrap classes plus a
+ * little scoped CSS built on Atum's own unprefixed variables.
+ *
+ * Variables set by StaleCacheBuster::renderViewer():
+ *
+ * @var   array     $filters   q, range, file, limit, start
+ * @var   array     $rows      Entries on this page
+ * @var   int       $total     Entries matching the filters
+ * @var   int       $start     First row shown (0-based)
+ * @var   array     $stats     all, 1h, 24h, 7d, urls, size
+ * @var   string[]  $cssFiles  Distinct CSS files seen in the log
+ * @var   \Closure  $link      Builds a viewer/dump/csv URL, keeping the filters
+ * @var   bool      $logging   Whether logging is switched on
+ * @var   string    $token     CSRF token name
+ * @var   \Joomla\CMS\Document\HtmlDocument $document  The page document
  */
 
-// Handle clear action directly in the viewer
-$clearResult = null;
-$input = \Joomla\CMS\Factory::getApplication()->getInput();
-if ($input->get('do_clear') === '1') {
-    if (file_exists($logFilePath)) {
-        $deleted = @unlink($logFilePath);
-        if (!$deleted) {
-            @file_put_contents($logFilePath, '');
-        }
-        $clearResult = ['success' => true];
-    } else {
-        $clearResult = ['success' => true, 'message' => 'No log file found'];
-    }
-}
-?>
-<!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars($lang); ?>">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CS Stale Cache Buster - Log Viewer</title>
-    <style>
-        :root {
-            --bg: #1e1e2e;
-            --surface: #2a2a3e;
-            --border: #3a3a5e;
-            --text: #cdd6f4;
-            --text-dim: #888;
-            --accent: #89b4fa;
-            --green: #a6e3a1;
-            --yellow: #f9e2af;
-            --red: #f38ba8;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-            background: var(--bg);
-            color: var(--text);
-            padding: 20px;
-        }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        h1 { font-size: 1.4rem; }
-        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .btn {
-            padding: 8px 16px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--surface);
-            color: var(--text);
-        }
-        .btn:hover { border-color: var(--accent); }
-        .btn-danger { border-color: var(--red); color: var(--red); }
-        .btn-danger:hover { background: var(--red); color: var(--bg); }
-        .stats-bar {
-            display: flex;
-            gap: 20px;
-            background: var(--surface);
-            padding: 12px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        .stat { display: flex; flex-direction: column; }
-        .stat-label { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); }
-        .stat-value { font-size: 1.1rem; font-weight: bold; }
-        .log-entry {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin-bottom: 10px;
-            overflow: hidden;
-        }
-        .entry-header {
-            padding: 12px 16px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-        }
-        .entry-header:hover { background: rgba(137, 180, 250, 0.05); }
-        .entry-time { color: var(--text-dim); font-size: 0.85rem; white-space: nowrap; }
-        .entry-page {
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            color: var(--accent);
-            font-size: 0.85rem;
-        }
-        .entry-count {
-            background: var(--accent);
-            color: var(--bg);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.75rem;
-            font-weight: bold;
-            white-space: nowrap;
-        }
-        .entry-details {
-            display: none;
-            padding: 0 16px 12px;
-            border-top: 1px solid var(--border);
-        }
-        .entry-details.open { display: block; }
-        .mod-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.8rem;
-        }
-        .mod-table th {
-            text-align: left;
-            padding: 6px 8px;
-            color: var(--text-dim);
-            border-bottom: 1px solid var(--border);
-            font-size: 0.7rem;
-            text-transform: uppercase;
-        }
-        .mod-table td {
-            padding: 6px 8px;
-            border-bottom: 1px solid rgba(58, 58, 94, 0.5);
-            word-break: break-all;
-            font-family: monospace;
-            font-size: 0.8rem;
-        }
-        .url-original { color: var(--text-dim); }
-        .url-modified { color: var(--green); }
-        .pagination {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
-            align-items: center;
-        }
-        .pagination .info { color: var(--text-dim); font-size: 0.85rem; }
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-dim);
-        }
-        .clear-notice {
-            background: var(--green);
-            color: var(--bg);
-            padding: 12px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-<div class="container">
+$e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
-    <?php if ($clearResult && $clearResult['success']): ?>
-    <div class="clear-notice">Log cleared successfully.</div>
+$formatSize = static function (int $bytes): string {
+    if ($bytes >= 1048576) {
+        return round($bytes / 1048576, 1) . ' MB';
+    }
+
+    return $bytes >= 1024 ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B';
+};
+
+$ranges = [
+    ''    => 'PLG_SYSTEM_STALECACHEBUSTER_RANGE_ANY',
+    '1h'  => 'PLG_SYSTEM_STALECACHEBUSTER_RANGE_1H',
+    '24h' => 'PLG_SYSTEM_STALECACHEBUSTER_RANGE_24H',
+    '7d'  => 'PLG_SYSTEM_STALECACHEBUSTER_RANGE_7D',
+    '30d' => 'PLG_SYSTEM_STALECACHEBUSTER_RANGE_30D',
+];
+
+$cards = [
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_ENTRIES', 'value' => $stats['all'], 'url' => $link(['q' => '', 'range' => '', 'file' => '', 'start' => 0], 'viewer', false), 'class' => ''],
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_LAST_HOUR', 'value' => $stats['1h'], 'url' => $link(['q' => '', 'range' => '1h', 'file' => '', 'start' => 0], 'viewer', false), 'class' => 'text-success'],
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_LAST_24H', 'value' => $stats['24h'], 'url' => $link(['q' => '', 'range' => '24h', 'file' => '', 'start' => 0], 'viewer', false), 'class' => 'text-success'],
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_LAST_7D', 'value' => $stats['7d'], 'url' => $link(['q' => '', 'range' => '7d', 'file' => '', 'start' => 0], 'viewer', false), 'class' => 'text-success'],
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_URLS', 'value' => $stats['urls'], 'url' => $link(['q' => '', 'range' => '', 'file' => '', 'start' => 0], 'viewer', false), 'class' => ''],
+    ['label' => 'PLG_SYSTEM_STALECACHEBUSTER_STAT_SIZE', 'value' => $formatSize($stats['size']), 'url' => $link([], 'download', false), 'class' => ''],
+];
+
+$filtered = $filters['q'] !== '' || $filters['range'] !== '' || $filters['file'] !== '';
+$end      = min($start + $filters['limit'], $total);
+
+$document->getWebAssetManager()->addInlineStyle(<<<'CSS'
+.scb-viewer .scb-stat {
+    display: block;
+    height: 100%;
+    color: inherit;
+    text-decoration: none;
+    border: 1px solid var(--border-color, rgba(127, 127, 127, 0.4));
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+.scb-viewer .scb-stat:hover,
+.scb-viewer .scb-stat:focus {
+    color: inherit;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+.scb-viewer .scb-stat-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    opacity: .75;
+}
+.scb-viewer .scb-stat-value { font-size: 1.5rem; font-weight: 600; line-height: 1.2; }
+.scb-viewer .scb-page { min-width: 0; flex: 1 1 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scb-viewer pre.scb-pre {
+    margin: .5rem 0 0;
+    padding: .6rem .75rem;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: inherit;
+    border: 1px solid var(--border-color, rgba(127, 127, 127, 0.4));
+    border-radius: .25rem;
+    font-size: .8rem;
+}
+.scb-viewer .scb-arrow { opacity: .6; }
+.scb-viewer .scb-new { color: var(--success, #198754); }
+CSS);
+?>
+<div class="scb-viewer container-fluid py-3">
+
+    <h1 class="h3 mb-3"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_TITLE'); ?></h1>
+
+    <?php if (!$logging) : ?>
+        <div class="alert alert-warning" role="alert"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_LOGGING_OFF'); ?></div>
     <?php endif; ?>
 
-    <div class="header">
-        <h1>CS Stale Cache Buster - Log Viewer</h1>
-        <div class="actions">
-            <button class="btn" onclick="loadLog()">Refresh</button>
-            <a class="btn" href="<?php echo $ajaxUrl; ?>&action=download">Download</a>
-            <button class="btn btn-danger" onclick="clearLog()">Clear Log</button>
-        </div>
+    <div class="row g-2 mb-3">
+        <?php foreach ($cards as $card) : ?>
+            <div class="col-6 col-md-4 col-xl-2">
+                <a class="scb-stat card" href="<?php echo $e($card['url']); ?>">
+                    <span class="card-body py-2 d-block">
+                        <span class="scb-stat-label d-block"><?php echo Text::_($card['label']); ?></span>
+                        <span class="scb-stat-value d-block <?php echo $card['class']; ?>"><?php echo $e($card['value']); ?></span>
+                    </span>
+                </a>
+            </div>
+        <?php endforeach; ?>
     </div>
 
-    <div class="stats-bar">
-        <div class="stat">
-            <span class="stat-label">Entries</span>
-            <span class="stat-value" id="stat-entries">-</span>
-        </div>
-        <div class="stat">
-            <span class="stat-label">URLs Modified</span>
-            <span class="stat-value" id="stat-urls">-</span>
-        </div>
-        <div class="stat">
-            <span class="stat-label">Log Size</span>
-            <span class="stat-value" id="stat-size">-</span>
-        </div>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <a class="btn btn-primary" href="<?php echo $e($link()); ?>"><span class="icon-refresh" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_REFRESH'); ?></a>
+        <a class="btn btn-secondary" href="<?php echo $e($link([], 'dump')); ?>" target="_blank" rel="noopener"><span class="icon-file" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_DUMP'); ?></a>
+        <a class="btn btn-secondary" href="<?php echo $e($link([], 'csv')); ?>"><span class="icon-download" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_CSV'); ?></a>
+        <a class="btn btn-secondary" href="<?php echo $e($link([], 'download', false)); ?>"><span class="icon-download" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_DOWNLOAD_LOG'); ?></a>
+        <button type="submit" class="btn btn-warning" id="scb-delete-btn" form="scb-delete-form" disabled><span class="icon-times" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_DELETE_SELECTED'); ?></button>
+        <button type="button" class="btn btn-danger ms-auto" data-bs-toggle="modal" data-bs-target="#scb-clear-modal"><span class="icon-trash" aria-hidden="true"></span> <?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_VIEWER_CLEAR_ALL'); ?></button>
     </div>
 
-    <div id="log-container">
-        <div class="empty-state">Loading...</div>
-    </div>
+    <form method="get" action="<?php echo $e(\Joomla\CMS\Uri\Uri::base() . 'index.php'); ?>" class="card card-body mb-3">
+        <input type="hidden" name="option" value="com_ajax">
+        <input type="hidden" name="plugin" value="stalecachebuster">
+        <input type="hidden" name="group" value="system">
+        <input type="hidden" name="format" value="html">
+        <input type="hidden" name="tmpl" value="component">
+        <input type="hidden" name="action" value="viewer">
+        <input type="hidden" name="<?php echo $e($token); ?>" value="1">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-3">
+                <label class="form-label" for="scb-q"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_SEARCH'); ?></label>
+                <input type="search" class="form-control" id="scb-q" name="q" value="<?php echo $e($filters['q']); ?>" placeholder="<?php echo $e(Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_SEARCH_PLACEHOLDER')); ?>">
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label" for="scb-range"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_RANGE'); ?></label>
+                <select class="form-select" id="scb-range" name="range">
+                    <?php foreach ($ranges as $value => $key) : ?>
+                        <option value="<?php echo $e($value); ?>"<?php echo $filters['range'] === (string) $value ? ' selected' : ''; ?>><?php echo Text::_($key); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label class="form-label" for="scb-file"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_FILE'); ?></label>
+                <select class="form-select" id="scb-file" name="file">
+                    <option value=""><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_FILE_ALL'); ?></option>
+                    <?php foreach ($cssFiles as $cssFile) : ?>
+                        <option value="<?php echo $e($cssFile); ?>"<?php echo $filters['file'] === $cssFile ? ' selected' : ''; ?>><?php echo $e($cssFile); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-6 col-lg-2">
+                <label class="form-label" for="scb-limit"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_LIMIT'); ?></label>
+                <select class="form-select" id="scb-limit" name="limit">
+                    <?php foreach ([10, 25, 50, 100, 200] as $size) : ?>
+                        <option value="<?php echo $size; ?>"<?php echo $filters['limit'] === $size ? ' selected' : ''; ?>><?php echo $size; ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-6 col-lg-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_APPLY'); ?></button>
+                <a class="btn btn-secondary flex-fill" href="<?php echo $e($link(['start' => 0], 'viewer', false)); ?>"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_FILTER_RESET'); ?></a>
+            </div>
+        </div>
+    </form>
 
-    <div class="pagination" id="pagination" style="display:none;">
-        <button class="btn" id="btn-prev" onclick="prevPage()">Previous</button>
-        <span class="info" id="page-info"></span>
-        <button class="btn" id="btn-next" onclick="nextPage()">Next</button>
+    <?php if (empty($rows)) : ?>
+        <div class="alert alert-info" role="status">
+            <?php echo Text::_($filtered ? 'PLG_SYSTEM_STALECACHEBUSTER_EMPTY_FILTERED' : 'PLG_SYSTEM_STALECACHEBUSTER_EMPTY_NONE'); ?>
+        </div>
+    <?php else : ?>
+        <form method="post" id="scb-delete-form" action="<?php echo $e(\Joomla\CMS\Uri\Uri::base() . 'index.php?option=com_ajax&plugin=stalecachebuster&group=system&format=html&tmpl=component&action=delete'); ?>">
+            <input type="hidden" name="q" value="<?php echo $e($filters['q']); ?>">
+            <input type="hidden" name="range" value="<?php echo $e($filters['range']); ?>">
+            <input type="hidden" name="file" value="<?php echo $e($filters['file']); ?>">
+            <input type="hidden" name="limit" value="<?php echo (int) $filters['limit']; ?>">
+            <?php echo HTMLHelper::_('form.token'); ?>
+
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="scb-select-all">
+                <label class="form-check-label" for="scb-select-all"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_COL_SELECT'); ?></label>
+            </div>
+
+            <?php foreach ($rows as $entry) :
+                $count = \count($entry['modifications']);
+                $page  = (string) ($entry['page'] ?? '');
+                ?>
+                <div class="card mb-2 scb-entry">
+                    <div class="card-header d-flex flex-wrap align-items-center gap-2">
+                        <input class="form-check-input scb-select mt-0" type="checkbox" name="ids[]" value="<?php echo $e($entry['id']); ?>" aria-label="<?php echo $e(Text::_('PLG_SYSTEM_STALECACHEBUSTER_COL_SELECT')); ?>">
+                        <span class="small text-nowrap"><?php echo $e($entry['timestamp'] ?? ''); ?></span>
+                        <?php if (preg_match('#^https?://#i', $page)) : ?>
+                            <a class="scb-page" href="<?php echo $e($page); ?>" target="_blank" rel="noopener noreferrer" title="<?php echo $e($page); ?>"><?php echo $e($page); ?></a>
+                        <?php else : ?>
+                            <span class="scb-page" title="<?php echo $e($page); ?>"><?php echo $e($page); ?></span>
+                        <?php endif; ?>
+                        <span class="badge bg-success ms-auto"><?php echo $e(Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_ENTRY_URLS', $count)); ?></span>
+                    </div>
+                    <div class="card-body py-2">
+                        <details>
+                            <summary><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_ENTRY_SHOW_URLS'); ?></summary>
+                            <pre class="scb-pre"><?php
+                            foreach ($entry['modifications'] as $mod) {
+                                echo $e(($mod['original'] ?? '')) . "\n" . '  <span class="scb-arrow">=&gt;</span> <span class="scb-new">' . $e(($mod['modified'] ?? '')) . "</span>\n";
+                            }
+                            ?></pre>
+                        </details>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </form>
+
+        <nav class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" aria-label="pagination">
+            <span class="small"><?php echo $e(Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_PAGINATION_INFO', $start + 1, $end, $total)); ?></span>
+            <span class="d-flex gap-2">
+                <?php if ($start > 0) : ?>
+                    <a class="btn btn-secondary" href="<?php echo $e($link(['start' => max(0, $start - $filters['limit'])])); ?>"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_PAGE_PREV'); ?></a>
+                <?php endif; ?>
+                <?php if ($end < $total) : ?>
+                    <a class="btn btn-secondary" href="<?php echo $e($link(['start' => $start + $filters['limit']])); ?>"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_PAGE_NEXT'); ?></a>
+                <?php endif; ?>
+            </span>
+        </nav>
+    <?php endif; ?>
+
+    <div class="modal fade" id="scb-clear-modal" tabindex="-1" aria-labelledby="scb-clear-title" aria-hidden="true">
+        <div class="modal-dialog">
+            <form class="modal-content" method="post" action="<?php echo $e(\Joomla\CMS\Uri\Uri::base() . 'index.php?option=com_ajax&plugin=stalecachebuster&group=system&format=html&tmpl=component&action=clear'); ?>">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="scb-clear-title"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_CLEAR_CONFIRM_TITLE'); ?></h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo $e(Text::_('PLG_SYSTEM_STALECACHEBUSTER_CANCEL')); ?>"></button>
+                </div>
+                <div class="modal-body p-3"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_CLEAR_CONFIRM'); ?></div>
+                <div class="modal-footer">
+                    <input type="hidden" name="viewer" value="1">
+                    <?php echo HTMLHelper::_('form.token'); ?>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_CANCEL'); ?></button>
+                    <button type="submit" class="btn btn-danger" id="scb-clear-confirm"><?php echo Text::_('PLG_SYSTEM_STALECACHEBUSTER_CLEAR_CONFIRM_YES'); ?></button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+<?php
+$document->getWebAssetManager()->addInlineScript(<<<'JS'
+// Atum's own script is switched off on component pages, so follow the browser's
+// light/dark setting here when the template is set to "follow the operating system".
+(function () {
+    var root = document.documentElement;
 
-<script>
-const AJAX_URL = <?php echo json_encode($ajaxUrl); ?>;
-const CLEAR_URL = AJAX_URL + '&action=clear';
-let currentOffset = 0;
-const PAGE_SIZE = 50;
-let totalEntries = 0;
-
-function loadLog() {
-    fetch(AJAX_URL + '&action=view&lines=' + PAGE_SIZE + '&offset=' + currentOffset)
-        .then(r => r.json())
-        .then(data => {
-            if (!data.success) {
-                document.getElementById('log-container').innerHTML =
-                    '<div class="empty-state">Error: ' + (data.error || 'Unknown') + '</div>';
-                return;
-            }
-
-            totalEntries = data.total;
-            document.getElementById('stat-entries').textContent = data.total;
-
-            let totalUrls = 0;
-            data.entries.forEach(e => { totalUrls += (e.modifications || []).length; });
-            document.getElementById('stat-urls').textContent = totalUrls;
-
-            if (data.entries.length === 0) {
-                document.getElementById('log-container').innerHTML =
-                    '<div class="empty-state">No log entries yet. Enable logging in plugin settings and visit some pages.</div>';
-                document.getElementById('pagination').style.display = 'none';
-                return;
-            }
-
-            let html = '';
-            data.entries.forEach((entry, i) => {
-                const mods = entry.modifications || [];
-                const id = 'entry-' + currentOffset + '-' + i;
-                html += '<div class="log-entry">';
-                html += '<div class="entry-header" onclick="toggleEntry(\'' + id + '\')">';
-                html += '<span class="entry-time">' + escHtml(entry.timestamp || '') + '</span>';
-                html += '<span class="entry-page">' + escHtml(entry.page || '') + '</span>';
-                html += '<span class="entry-count">' + mods.length + ' URL' + (mods.length !== 1 ? 's' : '') + '</span>';
-                html += '</div>';
-                html += '<div class="entry-details" id="' + id + '">';
-                if (mods.length > 0) {
-                    html += '<table class="mod-table"><thead><tr><th>Original</th><th>Modified</th></tr></thead><tbody>';
-                    mods.forEach(m => {
-                        html += '<tr>';
-                        html += '<td class="url-original">' + escHtml(m.original || '') + '</td>';
-                        html += '<td class="url-modified">' + escHtml(m.modified || '') + '</td>';
-                        html += '</tr>';
-                    });
-                    html += '</tbody></table>';
-                }
-                html += '</div></div>';
-            });
-
-            document.getElementById('log-container').innerHTML = html;
-
-            // Pagination
-            const pag = document.getElementById('pagination');
-            if (data.total > PAGE_SIZE) {
-                pag.style.display = 'flex';
-                const start = currentOffset + 1;
-                const end = Math.min(currentOffset + PAGE_SIZE, data.total);
-                document.getElementById('page-info').textContent = start + '-' + end + ' of ' + data.total;
-                document.getElementById('btn-prev').disabled = (currentOffset === 0);
-                document.getElementById('btn-next').disabled = (end >= data.total);
-            } else {
-                pag.style.display = 'none';
-            }
-        })
-        .catch(err => {
-            document.getElementById('log-container').innerHTML =
-                '<div class="empty-state">Failed to load log: ' + err.message + '</div>';
-        });
-
-    // Get file size
-    fetch(AJAX_URL + '&action=view&lines=0&offset=0')
-        .then(r => r.json())
-        .then(data => {
-            // Estimate size from total entries
-            document.getElementById('stat-size').textContent = data.total > 0 ? '~' + Math.round(data.total * 0.3) + ' KB' : '0';
-        })
-        .catch(() => {});
-}
-
-function toggleEntry(id) {
-    document.getElementById(id).classList.toggle('open');
-}
-
-function prevPage() {
-    currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
-    loadLog();
-}
-
-function nextPage() {
-    if (currentOffset + PAGE_SIZE < totalEntries) {
-        currentOffset += PAGE_SIZE;
-        loadLog();
+    if (!root.hasAttribute('data-color-scheme-os') || !window.matchMedia) {
+        return;
     }
-}
 
-function clearLog() {
-    if (!confirm('Clear all log entries?')) return;
-    fetch(CLEAR_URL)
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                currentOffset = 0;
-                loadLog();
-            } else {
-                alert('Error: ' + (data.error || 'Unknown'));
-            }
-        })
-        .catch(err => alert('Failed: ' + err.message));
-}
+    var query = window.matchMedia('(prefers-color-scheme: dark)');
+    var apply = function () {
+        if (query.matches) {
+            root.setAttribute('data-color-scheme', 'dark');
+            root.setAttribute('data-bs-theme', 'dark');
+        } else {
+            root.removeAttribute('data-color-scheme');
+            root.removeAttribute('data-bs-theme');
+        }
+    };
 
-function escHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
+    apply();
 
-// Load on page open
-loadLog();
-</script>
-</body>
-</html>
+    if (query.addEventListener) {
+        query.addEventListener('change', apply);
+    }
+})();
+
+document.addEventListener('DOMContentLoaded', function () {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('.scb-viewer .scb-select'));
+    var all = document.getElementById('scb-select-all');
+    var del = document.getElementById('scb-delete-btn');
+    function sync() {
+        var any = boxes.some(function (b) { return b.checked; });
+        if (del) { del.disabled = !any; }
+        if (all) { all.checked = boxes.length > 0 && boxes.every(function (b) { return b.checked; }); }
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    if (all) {
+        all.addEventListener('change', function () {
+            boxes.forEach(function (b) { b.checked = all.checked; });
+            sync();
+        });
+    }
+    sync();
+});
+JS);

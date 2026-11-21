@@ -12,13 +12,13 @@ namespace Cybersalt\Plugin\System\StaleCacheBuster\Extension;
 
 \defined('_JEXEC') or die;
 
-use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\Folder;
+use Cybersalt\Plugin\System\StaleCacheBuster\Helper\SupportHelper;
+use Joomla\CMS\Event\Plugin\AjaxEvent;
+use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Session\Session;
 use Joomla\CMS\Uri\Uri;
-use Joomla\Event\Event;
 use Joomla\Event\SubscriberInterface;
 
 class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
@@ -114,7 +114,46 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
     // ---------------------------------------------------------------
 
     /**
-     * Get the list of CSS file paths from installed templates that should be busted.
+     * Recursively list the .css files below a directory, as relative paths
+     * from the site root with forward slashes (templates/cassiopeia/css/x.css).
+     * Plain PHP, so it does not depend on any Joomla filesystem class.
+     *
+     * @return  string[]
+     */
+    private function listCssFiles(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $root  = rtrim(str_replace('\\', '/', JPATH_ROOT), '/') . '/';
+        $files = [];
+
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+            );
+
+            foreach ($iterator as $file) {
+                if (!$file->isFile() || !str_ends_with($file->getFilename(), '.css')) {
+                    continue;
+                }
+
+                $path = str_replace('\\', '/', $file->getPathname());
+
+                $files[] = str_starts_with($path, $root) ? substr($path, \strlen($root)) : $path;
+            }
+        } catch (\Throwable $e) {
+            // An unreadable folder just means no CSS files from it.
+        }
+
+        sort($files);
+
+        return $files;
+    }
+
+    /**
+     * Get the list of CSS file paths from the active template that should be busted.
      * Returns relative paths like: templates/cybersalt/css/template.css
      */
     private function getTemplateCssPaths(): array
@@ -123,31 +162,13 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
             return $this->templateCssPaths;
         }
 
-        $this->templateCssPaths = [];
+        $template = $this->getApplication()->getTemplate();
 
-        // Get the active site template(s)
-        $app = $this->getApplication();
-        $template = $app->getTemplate();
-
-        // Scan the active template's CSS directory
-        $templateCssDir = JPATH_ROOT . '/templates/' . $template . '/css';
-        if (is_dir($templateCssDir)) {
-            $files = Folder::files($templateCssDir, '\.css$', true, true);
-            foreach ($files as $file) {
-                $relativePath = str_replace(JPATH_ROOT . '/', '', str_replace('\\', '/', $file));
-                $this->templateCssPaths[] = $relativePath;
-            }
-        }
-
-        // Also check /media/templates/site/{template}/css (Joomla 5 media location)
-        $mediaCssDir = JPATH_ROOT . '/media/templates/site/' . $template . '/css';
-        if (is_dir($mediaCssDir)) {
-            $files = Folder::files($mediaCssDir, '\.css$', true, true);
-            foreach ($files as $file) {
-                $relativePath = str_replace(JPATH_ROOT . '/', '', str_replace('\\', '/', $file));
-                $this->templateCssPaths[] = $relativePath;
-            }
-        }
+        // The active template's own css folder, and the Joomla 4+ media location
+        $this->templateCssPaths = array_merge(
+            $this->listCssFiles(JPATH_ROOT . '/templates/' . $template . '/css'),
+            $this->listCssFiles(JPATH_ROOT . '/media/templates/site/' . $template . '/css')
+        );
 
         return $this->templateCssPaths;
     }
@@ -256,76 +277,152 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
     // AJAX handler for template scan and log viewer
     // ---------------------------------------------------------------
 
-    public function onAjaxStalecachebuster(Event $event): void
+    /**
+     * Single entry point for the settings-page buttons and the log viewer
+     * (index.php?option=com_ajax&plugin=stalecachebuster&group=system).
+     *
+     * Every action needs an administrator who can manage plugins and a valid
+     * CSRF token. Actions that change anything (clear, delete) also need the
+     * right to edit plugins, and must arrive as a POST.
+     */
+    public function onAjaxStalecachebuster(AjaxEvent $event): void
     {
-        $app = $this->getApplication();
+        $app   = $this->getApplication();
+        $input = $app->getInput();
+
+        $this->loadLanguage();
+
+        $action = $input->get('action', 'viewer', 'cmd');
+        $isHtml = $action === 'viewer';
 
         if (!$app->isClient('administrator')) {
-            $this->sendJsonResponse(['error' => 'Access denied']);
+            $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_ACCESS', 403, $isHtml, $event);
             return;
         }
 
-        $user = Factory::getApplication()->getIdentity();
-        if (!$user->authorise('core.manage', 'com_plugins')) {
-            $this->sendJsonResponse(['error' => 'Insufficient permissions']);
+        $user = $app->getIdentity();
+
+        if (!$user || $user->guest || !$user->authorise('core.manage', 'com_plugins')) {
+            $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_ACCESS', 403, $isHtml, $event);
             return;
         }
 
-        if (!Session::checkToken('get') && !Session::checkToken('post')) {
-            $this->sendJsonResponse(['error' => 'Invalid token']);
+        $changes = \in_array($action, ['clear', 'delete'], true);
+
+        if ($changes) {
+            if (strtoupper((string) $input->getMethod()) !== 'POST') {
+                $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_POST_ONLY', 405, false, $event);
+                return;
+            }
+
+            if (!$user->authorise('core.edit', 'com_plugins')) {
+                $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_ACCESS', 403, false, $event);
+                return;
+            }
+
+            if (!Session::checkToken('post')) {
+                $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_TOKEN', 403, false, $event);
+                return;
+            }
+        } elseif (!Session::checkToken('get')) {
+            $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_TOKEN', 403, $isHtml, $event);
             return;
         }
-
-        $action = $app->getInput()->get('action', 'view', 'cmd');
 
         switch ($action) {
+            case 'viewer':
+                $event->addResult($this->renderViewer());
+                return;
+
             case 'scan':
-                $result = $this->ajaxScanTemplates();
-                break;
+                $this->sendJson($this->scanTemplates());
+                return;
 
             case 'view':
-                $result = $this->ajaxViewLog();
-                break;
+                $this->sendJson($this->viewLog());
+                return;
 
-            case 'clear':
-                $result = $this->ajaxClearLog();
-                break;
+            case 'dump':
+                $this->sendText($this->buildDump(), 'text/plain; charset=utf-8');
+                return;
+
+            case 'csv':
+                $this->sendText(
+                    $this->buildCsv(),
+                    'text/csv; charset=utf-8',
+                    'stalecachebuster-log-' . date('Ymd-His') . '.csv'
+                );
+                return;
 
             case 'download':
-                $this->ajaxDownloadLog();
+                $this->downloadLog();
                 return;
 
-            case 'viewer':
-                $this->loadLanguage();
-                echo $this->ajaxRenderViewer();
-                $app->close();
+            case 'clear':
+                $this->clearLog();
                 return;
 
-            default:
-                $result = json_encode(['error' => 'Unknown action']);
+            case 'delete':
+                $this->deleteEntries();
+                return;
         }
 
-        header('Content-Type: application/json; charset=utf-8');
-        echo $result;
-        $app->close();
+        $this->deny('PLG_SYSTEM_STALECACHEBUSTER_ERROR_UNKNOWN_ACTION', 400, $isHtml, $event);
     }
 
-    private function sendJsonResponse(array $data): void
+    /**
+     * Refuse a request with a translated message that ends with the support
+     * contact sentence. JSON for the AJAX buttons, an alert box for the viewer.
+     */
+    private function deny(string $key, int $status, bool $html, AjaxEvent $event): void
     {
+        $message = Text::sprintf($key, SupportHelper::getContactSentence());
+
+        if ($html) {
+            $this->getApplication()->setHeader('status', (string) $status, true);
+            $event->addResult('<div class="alert alert-danger" role="alert">'
+                . htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</div>');
+
+            return;
+        }
+
+        $this->sendJson(['success' => false, 'error' => $message], $status);
+    }
+
+    private function sendJson(array $data, int $status = 200): void
+    {
+        http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
         echo json_encode($data);
+        $this->getApplication()->close();
+    }
+
+    private function sendText(string $body, string $contentType, string $filename = ''): void
+    {
+        header('Content-Type: ' . $contentType);
+        header('X-Content-Type-Options: nosniff');
+
+        if ($filename !== '') {
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+        }
+
+        echo $body;
         $this->getApplication()->close();
     }
 
     /**
      * Scan all installed site templates and return their CSS files.
      */
-    private function ajaxScanTemplates(): string
+    private function scanTemplates(): array
     {
         $templates = [];
 
         // Scan /templates/ directory for site templates
-        $templateDirs = Folder::folders(JPATH_ROOT . '/templates');
+        $templateDirs = array_filter(
+            scandir(JPATH_ROOT . '/templates') ?: [],
+            static fn (string $name): bool => $name[0] !== '.' && is_dir(JPATH_ROOT . '/templates/' . $name)
+        );
 
         foreach ($templateDirs as $tplName) {
             // Skip system template
@@ -335,36 +432,22 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
 
             $cssFiles = [];
 
-            // Check /templates/{name}/css/
-            $cssDir = JPATH_ROOT . '/templates/' . $tplName . '/css';
-            if (is_dir($cssDir)) {
-                $files = Folder::files($cssDir, '\.css$', true, true);
-                foreach ($files as $file) {
-                    $relative = str_replace(JPATH_ROOT . '/', '', str_replace('\\', '/', $file));
-                    $mtime = @filemtime($file);
-                    $cssFiles[] = [
-                        'path'     => $relative,
-                        'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown',
-                        'size'     => filesize($file),
-                        'version'  => $mtime ? dechex($mtime) : '',
-                    ];
-                }
-            }
+            // /templates/{name}/css/ and /media/templates/site/{name}/css/
+            $paths = array_merge(
+                $this->listCssFiles(JPATH_ROOT . '/templates/' . $tplName . '/css'),
+                $this->listCssFiles(JPATH_ROOT . '/media/templates/site/' . $tplName . '/css')
+            );
 
-            // Check /media/templates/site/{name}/css/
-            $mediaCssDir = JPATH_ROOT . '/media/templates/site/' . $tplName . '/css';
-            if (is_dir($mediaCssDir)) {
-                $files = Folder::files($mediaCssDir, '\.css$', true, true);
-                foreach ($files as $file) {
-                    $relative = str_replace(JPATH_ROOT . '/', '', str_replace('\\', '/', $file));
-                    $mtime = @filemtime($file);
-                    $cssFiles[] = [
-                        'path'     => $relative,
-                        'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown',
-                        'size'     => filesize($file),
-                        'version'  => $mtime ? dechex($mtime) : '',
-                    ];
-                }
+            foreach ($paths as $relative) {
+                $file  = JPATH_ROOT . '/' . $relative;
+                $mtime = @filemtime($file);
+
+                $cssFiles[] = [
+                    'path'     => $relative,
+                    'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown',
+                    'size'     => (int) @filesize($file),
+                    'version'  => $mtime ? dechex($mtime) : '',
+                ];
             }
 
             if (!empty($cssFiles)) {
@@ -375,19 +458,42 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
             }
         }
 
-        return json_encode([
+        return [
             'success'   => true,
             'templates' => $templates,
-        ]);
+        ];
     }
 
     // ---------------------------------------------------------------
     // Logging
     // ---------------------------------------------------------------
 
+    /**
+     * The log lives in Joomla's configured log folder (administrator/logs by
+     * default), which is kept closed to the web. Older versions wrote to
+     * /logs/ in the site root, which is not protected; if a log is still
+     * there it is moved across the first time it is needed.
+     */
     private function getLogFile(): string
     {
-        return JPATH_ROOT . '/logs/stalecachebuster.log';
+        $dir = (string) $this->getApplication()->get('log_path', '');
+
+        if ($dir === '') {
+            $dir = JPATH_ADMINISTRATOR . '/logs';
+        }
+
+        $logFile = rtrim($dir, '/\\') . '/stalecachebuster.log';
+        $legacy  = JPATH_ROOT . '/logs/stalecachebuster.log';
+
+        if (!is_file($logFile) && is_file($legacy) && is_dir(\dirname($logFile))) {
+            @rename($legacy, $logFile);
+
+            if (is_file($legacy . '.old')) {
+                @rename($legacy . '.old', $logFile . '.old');
+            }
+        }
+
+        return $logFile;
     }
 
     private function writeLog(string $pageUrl, array $modifications): void
@@ -417,90 +523,431 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
         file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
     }
 
-    private function ajaxViewLog(): string
+    /**
+     * Read the whole log, newest entry first. Every entry gets an id (a short
+     * hash of its line) so rows can be selected and deleted.
+     *
+     * @return  array[]
+     */
+    private function readEntries(): array
     {
         $logFile = $this->getLogFile();
-        $input   = $this->getApplication()->getInput();
-        $lines   = (int) $input->get('lines', 100, 'int');
-        $offset  = (int) $input->get('offset', 0, 'int');
 
-        if (!file_exists($logFile)) {
-            return json_encode([
-                'success' => true,
-                'entries' => [],
-                'total'   => 0,
-                'message' => 'Log file does not exist yet.',
-            ]);
+        if (!is_file($logFile)) {
+            return [];
         }
 
-        $content  = file_get_contents($logFile);
-        $allLines = array_filter(explode("\n", $content));
-        $entries  = [];
+        $entries = [];
 
-        foreach ($allLines as $line) {
+        foreach (explode("\n", (string) file_get_contents($logFile)) as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+
             $entry = json_decode($line, true);
-            if ($entry) {
-                $entries[] = $entry;
+
+            if (!\is_array($entry)) {
+                continue;
+            }
+
+            $entry['id']            = substr(sha1($line), 0, 12);
+            $entry['time']          = (int) strtotime((string) ($entry['timestamp'] ?? ''));
+            $entry['modifications'] = \is_array($entry['modifications'] ?? null) ? $entry['modifications'] : [];
+            $entries[]              = $entry;
+        }
+
+        return array_reverse($entries);
+    }
+
+    /**
+     * Path part of a CSS URL without host and query string, used for the CSS file filter.
+     */
+    private function cssFileOf(string $url): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+
+        return $path !== '' ? $path : $url;
+    }
+
+    /**
+     * Number of seconds covered by a time-range filter value (0 = any time).
+     */
+    private function rangeSeconds(string $range): int
+    {
+        return ['1h' => 3600, '24h' => 86400, '7d' => 604800, '30d' => 2592000][$range] ?? 0;
+    }
+
+    /**
+     * Apply the viewer filters (free text, time range, CSS file).
+     *
+     * @param   array[]  $entries  Entries from readEntries()
+     *
+     * @return  array[]
+     */
+    private function filterEntries(array $entries, string $search, string $range, string $file): array
+    {
+        $seconds = $this->rangeSeconds($range);
+        $cutoff  = $seconds ? time() - $seconds : 0;
+        $needle  = mb_strtolower($search);
+
+        return array_values(array_filter($entries, function (array $entry) use ($cutoff, $needle, $file): bool {
+            if ($cutoff && $entry['time'] < $cutoff) {
+                return false;
+            }
+
+            if ($file !== '') {
+                $found = false;
+
+                foreach ($entry['modifications'] as $mod) {
+                    if ($this->cssFileOf((string) ($mod['original'] ?? '')) === $file) {
+                        $found = true;
+                        break;
+                    }
+                }
+
+                if (!$found) {
+                    return false;
+                }
+            }
+
+            if ($needle !== '') {
+                $haystack = (string) ($entry['page'] ?? '');
+
+                foreach ($entry['modifications'] as $mod) {
+                    $haystack .= ' ' . ($mod['original'] ?? '') . ' ' . ($mod['modified'] ?? '');
+                }
+
+                if (!str_contains(mb_strtolower($haystack), $needle)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
+    }
+
+    /**
+     * Filter values from the request, cleaned.
+     *
+     * @return  array{q: string, range: string, file: string, limit: int, start: int}
+     */
+    private function getFilters(): array
+    {
+        $input = $this->getApplication()->getInput();
+        $range = $input->get('range', '', 'cmd');
+        $limit = $input->get('limit', 50, 'int');
+
+        return [
+            'q'     => trim((string) $input->get('q', '', 'string')),
+            'range' => \in_array($range, ['1h', '24h', '7d', '30d'], true) ? $range : '',
+            'file'  => trim((string) $input->get('file', '', 'string')),
+            'limit' => \in_array($limit, [10, 25, 50, 100, 200], true) ? $limit : 50,
+            'start' => max(0, $input->get('start', 0, 'int')),
+        ];
+    }
+
+    private function viewLog(): array
+    {
+        $filters = $this->getFilters();
+        $entries = $this->filterEntries($this->readEntries(), $filters['q'], $filters['range'], $filters['file']);
+
+        return [
+            'success' => true,
+            'entries' => array_slice($entries, $filters['start'], $filters['limit']),
+            'total'   => \count($entries),
+            'offset'  => $filters['start'],
+            'limit'   => $filters['limit'],
+        ];
+    }
+
+    private function buildDump(): string
+    {
+        $filters = $this->getFilters();
+        $entries = $this->filterEntries($this->readEntries(), $filters['q'], $filters['range'], $filters['file']);
+        $out     = '';
+
+        foreach ($entries as $entry) {
+            $out .= '[' . ($entry['timestamp'] ?? '') . '] ' . ($entry['page'] ?? '') . "\n";
+
+            foreach ($entry['modifications'] as $mod) {
+                $out .= '    ' . ($mod['original'] ?? '') . ' => ' . ($mod['modified'] ?? '') . "\n";
+            }
+
+            $out .= "\n";
+        }
+
+        return $out;
+    }
+
+    private function buildCsv(): string
+    {
+        $filters = $this->getFilters();
+        $entries = $this->filterEntries($this->readEntries(), $filters['q'], $filters['range'], $filters['file']);
+
+        // A cell that starts with = + - @ would be run as a formula by a spreadsheet.
+        $safe = static function (string $value): string {
+            return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
+        };
+
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, ['timestamp', 'page', 'original_url', 'versioned_url'], ',', '"', '');
+
+        foreach ($entries as $entry) {
+            foreach ($entry['modifications'] as $mod) {
+                fputcsv($handle, [
+                    $safe((string) ($entry['timestamp'] ?? '')),
+                    $safe((string) ($entry['page'] ?? '')),
+                    $safe((string) ($mod['original'] ?? '')),
+                    $safe((string) ($mod['modified'] ?? '')),
+                ], ',', '"', '');
             }
         }
 
-        $entries = array_reverse($entries);
-        $total   = count($entries);
+        rewind($handle);
+        $csv = (string) stream_get_contents($handle);
+        fclose($handle);
 
-        if ($offset > 0 || $lines > 0) {
-            $entries = array_slice($entries, $offset, $lines);
-        }
-
-        return json_encode([
-            'success' => true,
-            'entries' => $entries,
-            'total'   => $total,
-            'offset'  => $offset,
-            'limit'   => $lines,
-        ]);
+        return $csv;
     }
 
-    private function ajaxClearLog(): string
+    private function downloadLog(): void
     {
         $logFile = $this->getLogFile();
 
-        if (file_exists($logFile)) {
-            @unlink($logFile);
-        }
-        @unlink($logFile . '.old');
-
-        return json_encode([
-            'success' => true,
-            'message' => 'Log cleared.',
-        ]);
-    }
-
-    private function ajaxDownloadLog(): void
-    {
-        $logFile = $this->getLogFile();
-
-        if (!file_exists($logFile)) {
-            echo '';
-            $this->getApplication()->close();
+        if (!is_file($logFile)) {
+            $this->sendText('', 'application/octet-stream', 'stalecachebuster_' . date('Y-m-d_His') . '.log');
             return;
         }
 
         header('Content-Type: application/octet-stream');
+        header('X-Content-Type-Options: nosniff');
         header('Content-Disposition: attachment; filename="stalecachebuster_' . date('Y-m-d_His') . '.log"');
         header('Content-Length: ' . filesize($logFile));
         readfile($logFile);
         $this->getApplication()->close();
     }
 
-    private function ajaxRenderViewer(): string
+    /**
+     * Where to go after a clear or delete that was sent from the viewer.
+     */
+    private function viewerUrl(array $filters = []): string
     {
-        $token       = Session::getFormToken();
-        $ajaxUrl     = Uri::base() . 'index.php?option=com_ajax&plugin=stalecachebuster&group=system&format=raw&' . $token . '=1';
-        $lang        = Factory::getLanguage()->getTag();
-        $logFilePath = $this->getLogFile();
+        $query = [
+            'option'  => 'com_ajax',
+            'plugin'  => 'stalecachebuster',
+            'group'   => 'system',
+            'format'  => 'html',
+            'tmpl'    => 'component',
+            'action'  => 'viewer',
+            Session::getFormToken() => 1,
+        ];
+
+        foreach (['q', 'range', 'file'] as $key) {
+            if (($filters[$key] ?? '') !== '') {
+                $query[$key] = $filters[$key];
+            }
+        }
+
+        if (($filters['limit'] ?? 50) !== 50) {
+            $query['limit'] = $filters['limit'];
+        }
+
+        return Uri::base() . 'index.php?' . http_build_query($query);
+    }
+
+    private function clearLog(): void
+    {
+        $app      = $this->getApplication();
+        $fromView = $app->getInput()->post->getInt('viewer', 0) === 1;
+        $logFile  = $this->getLogFile();
+        $failed   = false;
+
+        foreach ([$logFile, $logFile . '.old'] as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+
+            if (!@unlink($file) && @file_put_contents($file, '') === false) {
+                $failed = true;
+            }
+        }
+
+        if ($failed) {
+            if ($fromView) {
+                $app->enqueueMessage(Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_ERROR_LOG_WRITE', SupportHelper::getContactSentence()), 'error');
+                $app->redirect($this->viewerUrl());
+                return;
+            }
+
+            $this->sendJson([
+                'success' => false,
+                'error'   => Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_ERROR_LOG_WRITE', SupportHelper::getContactSentence()),
+            ], 500);
+            return;
+        }
+
+        if ($fromView) {
+            $app->enqueueMessage(Text::_('PLG_SYSTEM_STALECACHEBUSTER_CLEAR_SUCCESS'), 'message');
+            $app->redirect($this->viewerUrl());
+            return;
+        }
+
+        $this->sendJson(['success' => true, 'message' => Text::_('PLG_SYSTEM_STALECACHEBUSTER_CLEAR_SUCCESS')]);
+    }
+
+    /**
+     * Delete the selected entries (POST ids[] = entry ids from the viewer).
+     */
+    private function deleteEntries(): void
+    {
+        $app     = $this->getApplication();
+        $input   = $app->getInput();
+        $filters = [
+            'q'     => trim((string) $input->post->get('q', '', 'string')),
+            'range' => (string) $input->post->get('range', '', 'cmd'),
+            'file'  => trim((string) $input->post->get('file', '', 'string')),
+            'limit' => $input->post->getInt('limit', 50),
+        ];
+        $ids = array_values(array_filter(
+            (array) $input->post->get('ids', [], 'array'),
+            static fn ($id): bool => \is_string($id) && preg_match('/^[a-f0-9]{12}$/', $id) === 1
+        ));
+
+        if (empty($ids)) {
+            $app->enqueueMessage(Text::_('PLG_SYSTEM_STALECACHEBUSTER_DELETE_NONE'), 'warning');
+            $app->redirect($this->viewerUrl($filters));
+            return;
+        }
+
+        $logFile = $this->getLogFile();
+        $deleted = 0;
+        $handle  = is_file($logFile) ? @fopen($logFile, 'c+') : false;
+
+        if ($handle === false || !flock($handle, LOCK_EX)) {
+            if (\is_resource($handle)) {
+                fclose($handle);
+            }
+
+            $app->enqueueMessage(Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_ERROR_LOG_WRITE', SupportHelper::getContactSentence()), 'error');
+            $app->redirect($this->viewerUrl($filters));
+            return;
+        }
+
+        $keep = [];
+
+        foreach (explode("\n", (string) stream_get_contents($handle)) as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+
+            if (\in_array(substr(sha1($line), 0, 12), $ids, true)) {
+                $deleted++;
+                continue;
+            }
+
+            $keep[] = $line;
+        }
+
+        ftruncate($handle, 0);
+        rewind($handle);
+        fwrite($handle, $keep ? implode("\n", $keep) . "\n" : '');
+        fflush($handle);
+        flock($handle, LOCK_UN);
+        fclose($handle);
+
+        $app->enqueueMessage(Text::sprintf('PLG_SYSTEM_STALECACHEBUSTER_DELETE_SUCCESS', $deleted), 'message');
+        $app->redirect($this->viewerUrl($filters));
+    }
+
+    // ---------------------------------------------------------------
+    // Log viewer page
+    // ---------------------------------------------------------------
+
+    /**
+     * Build the log viewer. It is rendered inside the Atum administrator
+     * template (com_ajax with format=html&tmpl=component), so it gets
+     * Atum's light and dark colours for free.
+     */
+    private function renderViewer(): string
+    {
+        $app     = $this->getApplication();
+        $filters = $this->getFilters();
+        $all     = $this->readEntries();
+        $matches = $this->filterEntries($all, $filters['q'], $filters['range'], $filters['file']);
+        $total   = \count($matches);
+        $start   = $filters['start'] >= $total ? 0 : $filters['start'];
+        $rows    = \array_slice($matches, $start, $filters['limit']);
+        $token   = Session::getFormToken();
+        $logFile = $this->getLogFile();
+
+        // Statistics always cover the whole log, not the filtered set.
+        $now   = time();
+        $stats = [
+            'all'   => \count($all),
+            '1h'    => 0,
+            '24h'   => 0,
+            '7d'    => 0,
+            'urls'  => 0,
+            'size'  => is_file($logFile) ? (int) filesize($logFile) : 0,
+            'files' => [],
+        ];
+
+        foreach ($all as $entry) {
+            $age = $now - $entry['time'];
+
+            $stats['1h']  += $age <= 3600 ? 1 : 0;
+            $stats['24h'] += $age <= 86400 ? 1 : 0;
+            $stats['7d']  += $age <= 604800 ? 1 : 0;
+            $stats['urls'] += \count($entry['modifications']);
+
+            foreach ($entry['modifications'] as $mod) {
+                $stats['files'][$this->cssFileOf((string) ($mod['original'] ?? ''))] = true;
+            }
+        }
+
+        $cssFiles = array_keys($stats['files']);
+        sort($cssFiles);
+
+        $base = [
+            'option' => 'com_ajax',
+            'plugin' => 'stalecachebuster',
+            'group'  => 'system',
+            'format' => 'html',
+            'tmpl'   => 'component',
+            'action' => 'viewer',
+            $token   => 1,
+        ];
+
+        // Builds a viewer/dump/csv link that keeps the current filters unless overridden.
+        $link = function (array $override = [], string $action = 'viewer', bool $keepFilters = true) use ($base, $filters): string {
+            $query = $base;
+            $query['action'] = $action;
+
+            if ($action !== 'viewer') {
+                $query['format'] = 'raw';
+                unset($query['tmpl']);
+            }
+
+            $current = $keepFilters ? $filters : ['q' => '', 'range' => '', 'file' => '', 'limit' => 50, 'start' => 0];
+
+            foreach (array_merge($current, $override) as $key => $value) {
+                if ($value !== '' && $value !== 0 && !($key === 'limit' && (int) $value === 50)) {
+                    $query[$key] = $value;
+                }
+            }
+
+            return Uri::base() . 'index.php?' . http_build_query($query);
+        };
+
+        $document = $app->getDocument();
+        $wa       = $document->getWebAssetManager();
+        $wa->useScript('bootstrap.modal');
+
+        $logging = (int) $this->params->get('enable_logging', 0) === 1;
 
         ob_start();
         include __DIR__ . '/../../tmpl/viewer.php';
-        return ob_get_clean();
+
+        return (string) ob_get_clean();
     }
 }

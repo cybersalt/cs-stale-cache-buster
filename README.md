@@ -1,6 +1,6 @@
 # CS Stale Cache Buster
 
-A Joomla 5 system plugin that automatically appends file-modification timestamps to template CSS URLs, forcing browsers to fetch fresh copies when template stylesheets change.
+A Joomla 5 and Joomla 6 system plugin that automatically appends file-modification timestamps to template CSS URLs, forcing browsers to fetch fresh copies when template stylesheets change.
 
 ## Description
 
@@ -13,13 +13,14 @@ When you edit your Joomla template's CSS files, browsers may continue serving th
 - Template CSS scanner in admin to see all tracked files and their version hashes
 - Prevent Admin Caching option — sends no-cache headers for CDN compatibility
 - Debug mode to see which URLs were modified (HTML comment in page source)
-- Full logging with log viewer, download, and clear functionality
+- Full logging with a log viewer (light and dark mode, filters, statistics, plain-text dump, CSV download, delete selected, clear all)
+- Works on Joomla 6 without the Backward Compatibility plugin
 - CDN safe — does not touch third-party extension or JavaScript assets
-- 15 languages included
+- 17 languages included
 
 ## Requirements
 
-- Joomla 5.0 or higher
+- Joomla 5.0 or higher (Joomla 6 is supported, with the Backward Compatibility plugin on or off)
 - PHP 8.1 or higher
 
 ## Installation
@@ -42,7 +43,11 @@ When you edit your Joomla template's CSS files, browsers may continue serving th
 ### Logging Tab
 
 - **Enable Logging**: Log every template CSS URL modification to a file for diagnostics (default: No)
-- **Log Viewer**: Buttons to view, download, or clear the log
+- **Log Viewer**: Buttons to view, download, or clear the log. The log is kept in Joomla's log folder (`administrator/logs/stalecachebuster.log` by default). Only users who can manage plugins can open it; clearing it also needs permission to edit plugins.
+
+### Support Tab
+
+- **Support Email**, **Support URL** and **Support Label**: Shown in error messages and in the post-install card. Defaults to Cybersalt support.
 
 ## How It Works
 
