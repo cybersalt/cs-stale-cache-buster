@@ -43,7 +43,7 @@ When you edit your Joomla template's CSS files, browsers may continue serving th
 ### Logging Tab
 
 - **Enable Logging**: Log every template CSS URL modification to a file for diagnostics (default: No)
-- **Log Viewer**: Buttons to view, download, or clear the log. The log is kept in Joomla's log folder (`administrator/logs/stalecachebuster.log` by default). Only users who can manage plugins can open it; clearing it also needs permission to edit plugins.
+- **Log Viewer**: Buttons to view, download, or clear the log. The log is kept in Joomla's log folder (`administrator/logs/stalecachebuster.log.php` by default, a protected file the web server won't hand out). Only users who can manage plugins can open it; clearing it also needs permission to edit plugins.
 
 ### Support Tab
 
@@ -59,7 +59,7 @@ Use 7-Zip to create the installation package:
 
 ```powershell
 cd plg_system_stalecachebuster
-& 'C:\Program Files\7-Zip\7z.exe' a -tzip '../plg_system_stalecachebuster_v2.0.0.zip' *
+& 'C:\Program Files\7-Zip\7z.exe' a -tzip '../plg_system_stalecachebuster.zip' *
 ```
 
 ## License
