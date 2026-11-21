@@ -540,7 +540,9 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
             ),
         ];
 
-        $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
+        // JSON_HEX_TAG: the file ends in .php, so no "<?php" may ever reach it
+        // from a visitor's URL, even if the die() line were missing.
+        $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG) . "\n";
         $isNew   = !is_file($logFile) || filesize($logFile) === 0;
 
         if ($isNew ? !is_writable($logDir) : !is_writable($logFile)) {

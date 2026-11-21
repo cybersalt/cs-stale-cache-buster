@@ -117,8 +117,21 @@ return new class () implements InstallerScriptInterface {
                     return;
                 }
 
-                $lines = (string) @file_get_contents($legacy);
-                $head  = is_file($target) && filesize($target) > 0 ? '' : $guard;
+                // Re-encode every entry so nothing but escaped JSON reaches a
+                // .php file; anything that isn't a log entry is dropped.
+                $lines = '';
+                $file  = new \SplFileObject($legacy, 'r');
+
+                foreach ($file as $line) {
+                    $entry = json_decode(trim((string) $line), true);
+
+                    if (\is_array($entry)) {
+                        $lines .= json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG) . "\n";
+                    }
+                }
+
+                $file = null;
+                $head = is_file($target) && filesize($target) > 0 ? '' : $guard;
 
                 if (@file_put_contents($target, $head . $lines, FILE_APPEND | LOCK_EX) !== false) {
                     @unlink($legacy);
