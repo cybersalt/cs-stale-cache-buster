@@ -24,6 +24,25 @@ use Joomla\Event\SubscriberInterface;
 class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
 {
     /**
+     * Log file names. They end in .php and start with a die() line, the way
+     * Joomla's own logs do, so the web server never hands them out even
+     * though the log folder sits inside the site.
+     */
+    public const LOG_NAME = 'stalecachebuster.log.php';
+
+    public const LOG_OLD_NAME = 'stalecachebuster.old.log.php';
+
+    public const LOG_GUARD = "#<?php die('Forbidden.'); ?>\n";
+
+    /** Longest URL kept in the log; longer ones are cut. */
+    private const LOG_MAX_URL = 2048;
+
+    /** Log size that triggers rotation, and the most the viewer will read. */
+    private const LOG_MAX_BYTES = 2 * 1024 * 1024;
+
+    private const LOG_MAX_READ = 4 * 1024 * 1024;
+
+    /**
      * Debug log of modifications made during this request.
      */
     private array $debugLog = [];
@@ -83,7 +102,8 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
 
         $debugMode = (int) $this->params->get('debug_mode', 0);
         $enableLog = (int) $this->params->get('enable_logging', 0);
-        $pageUrl   = Uri::getInstance()->toString();
+        // Path and query only: the host comes from the visitor's request.
+        $pageUrl   = Uri::getInstance()->toString(['path', 'query']);
 
         // Only bust template CSS files
         $body = $this->bustTemplateCssUrls($body);
@@ -338,10 +358,6 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
                 $this->sendJson($this->scanTemplates());
                 return;
 
-            case 'view':
-                $this->sendJson($this->viewLog());
-                return;
-
             case 'dump':
                 $this->sendText($this->buildDump(), 'text/plain; charset=utf-8');
                 return;
@@ -470,11 +486,12 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
 
     /**
      * The log lives in Joomla's configured log folder (administrator/logs by
-     * default), which is kept closed to the web. Older versions wrote to
-     * /logs/ in the site root, which is not protected; if a log is still
-     * there it is moved across the first time it is needed.
+     * default) under a .php name with a die() first line, so it can't be
+     * downloaded even though that folder is inside the site. Logs left by
+     * older versions (plain .log files, some in the public /logs folder) are
+     * moved across once, by the installer script on update.
      */
-    private function getLogFile(): string
+    private function getLogFile(bool $old = false): string
     {
         $dir = (string) $this->getApplication()->get('log_path', '');
 
@@ -482,45 +499,55 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
             $dir = JPATH_ADMINISTRATOR . '/logs';
         }
 
-        $logFile = rtrim($dir, '/\\') . '/stalecachebuster.log';
-        $legacy  = JPATH_ROOT . '/logs/stalecachebuster.log';
-
-        if (!is_file($logFile) && is_file($legacy) && is_dir(\dirname($logFile))) {
-            @rename($legacy, $logFile);
-
-            if (is_file($legacy . '.old')) {
-                @rename($legacy . '.old', $logFile . '.old');
-            }
-        }
-
-        return $logFile;
+        return rtrim($dir, '/\\') . '/' . ($old ? self::LOG_OLD_NAME : self::LOG_NAME);
     }
 
     private function writeLog(string $pageUrl, array $modifications): void
     {
         $logFile = $this->getLogFile();
-        $maxSize = 2 * 1024 * 1024;
+        $logDir  = \dirname($logFile);
 
-        if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-            $backup = $logFile . '.old';
-            @unlink($backup);
-            @rename($logFile, $backup);
+        // Logging must never break a page: skip quietly when we can't write.
+        if (!is_dir($logDir) && !@mkdir($logDir, 0755, true)) {
+            return;
         }
 
+        clearstatcache(true, $logFile);
+
+        if (is_file($logFile) && filesize($logFile) > self::LOG_MAX_BYTES) {
+            $backup = $this->getLogFile(true);
+            @unlink($backup);
+
+            // Locked or not allowed to rename: start again rather than let
+            // the file grow without end.
+            if (!@rename($logFile, $backup)) {
+                @file_put_contents($logFile, '', LOCK_EX);
+            }
+
+            clearstatcache(true, $logFile);
+        }
+
+        $clip  = static fn ($url): string => substr((string) $url, 0, self::LOG_MAX_URL);
         $entry = [
             'timestamp'     => date('Y-m-d H:i:s'),
-            'page'          => $pageUrl,
-            'modifications' => $modifications,
+            'page'          => $clip($pageUrl),
+            'modifications' => array_map(
+                static fn (array $mod): array => [
+                    'original' => $clip($mod['original'] ?? ''),
+                    'modified' => $clip($mod['modified'] ?? ''),
+                ],
+                $modifications
+            ),
         ];
 
-        $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+        $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
+        $isNew   = !is_file($logFile) || filesize($logFile) === 0;
 
-        $logDir = dirname($logFile);
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
+        if ($isNew ? !is_writable($logDir) : !is_writable($logFile)) {
+            return;
         }
 
-        file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
+        @file_put_contents($logFile, ($isNew ? self::LOG_GUARD : '') . $logLine, FILE_APPEND | LOCK_EX);
     }
 
     /**
@@ -539,7 +566,12 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
 
         $entries = [];
 
-        foreach (explode("\n", (string) file_get_contents($logFile)) as $line) {
+        // Read at most the newest LOG_MAX_READ bytes; a cut first line is
+        // simply not valid JSON and is skipped like the die() line.
+        $size     = (int) filesize($logFile);
+        $contents = (string) @file_get_contents($logFile, false, null, max(0, $size - self::LOG_MAX_READ));
+
+        foreach (explode("\n", $contents) as $line) {
             if (trim($line) === '') {
                 continue;
             }
@@ -646,20 +678,6 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
         ];
     }
 
-    private function viewLog(): array
-    {
-        $filters = $this->getFilters();
-        $entries = $this->filterEntries($this->readEntries(), $filters['q'], $filters['range'], $filters['file']);
-
-        return [
-            'success' => true,
-            'entries' => array_slice($entries, $filters['start'], $filters['limit']),
-            'total'   => \count($entries),
-            'offset'  => $filters['start'],
-            'limit'   => $filters['limit'],
-        ];
-    }
-
     private function buildDump(): string
     {
         $filters = $this->getFilters();
@@ -762,7 +780,7 @@ class StaleCacheBuster extends CMSPlugin implements SubscriberInterface
         $logFile  = $this->getLogFile();
         $failed   = false;
 
-        foreach ([$logFile, $logFile . '.old'] as $file) {
+        foreach ([$logFile, $this->getLogFile(true)] as $file) {
             if (!is_file($file)) {
                 continue;
             }

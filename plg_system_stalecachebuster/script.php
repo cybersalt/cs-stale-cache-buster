@@ -59,6 +59,12 @@ return new class () implements InstallerScriptInterface {
             return true;
         }
 
+        try {
+            $this->migrateLegacyLogs();
+        } catch (\Throwable $e) {
+            // Never fail the install over an old log file.
+        }
+
         // No page to show a card on when installing from the command line.
         if (!Factory::getApplication()->isClient('administrator')) {
             return true;
@@ -76,6 +82,49 @@ return new class () implements InstallerScriptInterface {
         }
 
         return true;
+    }
+
+    /**
+     * Versions up to 2.0.1 wrote a plain stalecachebuster.log (+ .old) into
+     * /logs in the site root, which the web server hands out to anyone. Move
+     * those entries into the protected .php log in Joomla's log folder and
+     * delete the old files. Same names as StaleCacheBuster::LOG_* (the plugin
+     * class may not be autoloadable while the installer runs).
+     */
+    private function migrateLegacyLogs(): void
+    {
+        $dir = rtrim((string) Factory::getApplication()->get('log_path', ''), '/\\');
+
+        if ($dir === '') {
+            $dir = JPATH_ADMINISTRATOR . '/logs';
+        }
+
+        $guard   = "#<?php die('Forbidden.'); ?>\n";
+        $targets = [
+            'stalecachebuster.log.old' => $dir . '/stalecachebuster.old.log.php',
+            'stalecachebuster.log'     => $dir . '/stalecachebuster.log.php',
+        ];
+
+        foreach ([JPATH_ROOT . '/logs', $dir] as $legacyDir) {
+            foreach ($targets as $legacyName => $target) {
+                $legacy = $legacyDir . '/' . $legacyName;
+
+                if (!is_file($legacy)) {
+                    continue;
+                }
+
+                if ((!is_dir($dir) && !@mkdir($dir, 0755, true)) || !is_writable($dir)) {
+                    return;
+                }
+
+                $lines = (string) @file_get_contents($legacy);
+                $head  = is_file($target) && filesize($target) > 0 ? '' : $guard;
+
+                if (@file_put_contents($target, $head . $lines, FILE_APPEND | LOCK_EX) !== false) {
+                    @unlink($legacy);
+                }
+            }
+        }
     }
 
     /**

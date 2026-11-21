@@ -6,7 +6,8 @@
     <version>2.0.2</version>
     <security>
       <item><![CDATA[Log tools need permission to manage plugins; clearing or deleting log entries also needs permission to edit plugins, a POST request and a valid security token]]></item>
-      <item><![CDATA[The log is now kept in Joomla's log folder instead of an unprotected logs folder in the site root; an existing log is moved over automatically]]></item>
+      <item><![CDATA[The log is now kept in Joomla's log folder under a protected file name instead of an unprotected logs folder in the site root; logs from older versions are moved over and removed on update]]></item>
+      <item><![CDATA[Only the page path and query are logged, long addresses are shortened, and an unwritable log no longer shows PHP warnings on the site]]></item>
     </security>
     <fix>
       <item><![CDATA[Fixed a fatal error on the front end of Joomla 6 when the Backward Compatibility plugin is off (GitHub issue 2)]]></item>

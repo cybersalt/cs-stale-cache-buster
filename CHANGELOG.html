@@ -33,7 +33,9 @@
     <h3><span class="section-icon">🔍</span> Security</h3>
     <ul>
         <li><strong>Log tools need the right permissions</strong>: Viewing the log needs permission to manage plugins. Clearing or deleting log entries also needs permission to edit plugins, a POST request and a valid security token.</li>
-        <li><strong>Log file location</strong>: The log is now kept in Joomla's log folder instead of a <code>logs</code> folder in the site root. An existing log is moved over automatically.</li>
+        <li><strong>Log file location</strong>: The log is now kept in Joomla's log folder instead of a <code>logs</code> folder in the site root, under a protected file name (<code>stalecachebuster.log.php</code>) that the web server won't hand out. Logs from older versions are moved over and removed when you update.</li>
+        <li><strong>What the log keeps</strong>: Only the page path and query are logged (not the host name the visitor sent), long addresses are shortened, and the log viewer reads at most the newest 4 MB.</li>
+        <li><strong>Quiet when the log can't be written</strong>: If the log folder or file isn't writable, the page loads normally and nothing is logged, instead of showing PHP warnings.</li>
     </ul>
 
     <h3><span class="section-icon">🔧</span> Improvements</h3>

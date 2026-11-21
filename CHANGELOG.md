@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔍 Security
 - **Log tools need the right permissions**: Viewing the log needs permission to manage plugins. Clearing or deleting log entries also needs permission to edit plugins, a POST request and a valid security token.
-- **Log file location**: The log is now kept in Joomla's log folder instead of a `logs` folder in the site root. An existing log is moved over automatically.
+- **Log file location**: The log is now kept in Joomla's log folder instead of a `logs` folder in the site root, under a protected file name (`stalecachebuster.log.php`) that the web server won't hand out. Logs from older versions are moved over and removed when you update.
+- **What the log keeps**: Only the page path and query are logged (not the host name the visitor sent), long addresses are shortened, and the log viewer reads at most the newest 4 MB.
+- **Quiet when the log can't be written**: If the log folder or file isn't writable, the page loads normally and nothing is logged, instead of showing PHP warnings.
 
 ### 🔧 Improvements
 - **Settings page**: The Scan Templates and Clear Log buttons no longer use browser pop-ups, and file names from the scan are escaped.

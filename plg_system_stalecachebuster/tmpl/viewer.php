@@ -34,6 +34,9 @@ use Joomla\CMS\Language\Text;
 
 $e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
+// Scheme + host of this site, for the page links (logged pages are path + query).
+$siteHost = \Joomla\CMS\Uri\Uri::getInstance(\Joomla\CMS\Uri\Uri::root())->toString(['scheme', 'host', 'port']);
+
 $formatSize = static function (int $bytes): string {
     if ($bytes >= 1048576) {
         return round($bytes / 1048576, 1) . ' MB';
@@ -201,8 +204,9 @@ CSS);
                     <div class="card-header d-flex flex-wrap align-items-center gap-2">
                         <input class="form-check-input scb-select mt-0" type="checkbox" name="ids[]" value="<?php echo $e($entry['id']); ?>" aria-label="<?php echo $e(Text::_('PLG_SYSTEM_STALECACHEBUSTER_COL_SELECT')); ?>">
                         <span class="small text-nowrap"><?php echo $e($entry['timestamp'] ?? ''); ?></span>
-                        <?php if (preg_match('#^https?://#i', $page)) : ?>
-                            <a class="scb-page" href="<?php echo $e($page); ?>" target="_blank" rel="noopener noreferrer" title="<?php echo $e($page); ?>"><?php echo $e($page); ?></a>
+                        <?php // Pages are logged as path + query; the link is built on this site's own address. Full URLs from older versions carry a visitor-supplied host, so they stay plain text. ?>
+                        <?php if (str_starts_with($page, '/') && !str_starts_with($page, '//')) : ?>
+                            <a class="scb-page" href="<?php echo $e($siteHost . $page); ?>" target="_blank" rel="noopener noreferrer" title="<?php echo $e($page); ?>"><?php echo $e($page); ?></a>
                         <?php else : ?>
                             <span class="scb-page" title="<?php echo $e($page); ?>"><?php echo $e($page); ?></span>
                         <?php endif; ?>
